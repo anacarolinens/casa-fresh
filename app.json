@@ -1,0 +1,48 @@
+{
+  "expo": {
+    "name": "CasaFresh",
+    "slug": "CasaFresh",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/casa-fresh-logo.png",
+    "scheme": "casafresh",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "icon": "./assets/images/casa-fresh-logo.png"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#1A1A1A",
+        "foregroundImage": "./assets/images/casa-fresh-logo.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "output": "static",
+      "favicon": "./assets/images/casa-fresh-logo.png"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#FFFFFF",
+          "image": "./assets/images/casa-fresh-logo.png",
+          "imageWidth": 120
+        }
+      ],
+      "expo-secure-store",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "O CasaFresh precisa de acesso às fotos para guardar imagens dos alimentos.",
+          "cameraPermission": "O CasaFresh precisa da câmara para fotografar os alimentos."
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    }
+  }
+}
