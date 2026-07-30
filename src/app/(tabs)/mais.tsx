@@ -9,7 +9,6 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  Switch,
   Text,
   TextInput,
   View,
@@ -324,18 +323,25 @@ export default function MaisScreen() {
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Aparência</Text>
-          <View style={styles.themeRow}>
+          <Pressable
+            style={styles.themeRow}
+            onPress={toggleDark}
+            accessibilityRole="button"
+            accessibilityLabel={isDark ? 'Ativar modo claro' : 'Ativar modo escuro'}>
             <View style={styles.themeText}>
-              <Text style={styles.themeLabel}>Modo noturno</Text>
-              <Text style={styles.themeHint}>Tema escuro para usar à noite</Text>
+              <Text style={styles.themeLabel}>{isDark ? 'Modo claro' : 'Modo noturno'}</Text>
+              <Text style={styles.themeHint}>
+                {isDark ? 'Tema claro para usar de dia' : 'Tema escuro para usar à noite'}
+              </Text>
             </View>
-            <Switch
-              value={isDark}
-              onValueChange={toggleDark}
-              trackColor={{ false: colors.border, true: colors.accent }}
-              thumbColor="#FFFFFF"
-            />
-          </View>
+            <View style={styles.themeBtn}>
+              <Ionicons
+                name={isDark ? 'sunny-outline' : 'moon-outline'}
+                size={22}
+                color={colors.text}
+              />
+            </View>
+          </Pressable>
         </View>
 
         <View style={styles.section}>
@@ -585,6 +591,14 @@ function makeStyles(colors: ThemeColors) {
     themeHint: {
       fontSize: 13,
       color: colors.textSecondary,
+    },
+    themeBtn: {
+      width: 44,
+      height: 44,
+      borderRadius: Radius.full,
+      backgroundColor: colors.input,
+      alignItems: 'center' as const,
+      justifyContent: 'center' as const,
     },
     card: {
       backgroundColor: colors.surface,

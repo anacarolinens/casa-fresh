@@ -21,6 +21,8 @@ let cachedHouseholdId: string | null = null;
 let cachedHouseholdUserId: string | null = null;
 let syncedInvitesUserId: string | null = null;
 let profileAvatarSupported: boolean | null = null;
+/** Nome do perfil já carregado/salvo — evita flash do metadata antigo no Início */
+let cachedDisplayName: { userId: string; nome: string } | null = null;
 
 function isMissingAvatarColumn(error: { message?: string } | null) {
   const message = error?.message?.toLowerCase() ?? '';
@@ -66,9 +68,29 @@ export function clearHouseholdCache() {
   cachedHouseholdId = null;
   cachedHouseholdUserId = null;
   syncedInvitesUserId = null;
+  cachedDisplayName = null;
 }
 
-export async function getPrimaryHouseholdId() {
+/** Restaura o household conhecido (ex.: cache em disco) para evitar query extra. */
+export function seedHouseholdCache(userId: string, householdId: string | null) {
+  cachedHouseholdUserId = userId;
+  cachedHouseholdId = householdId;
+}
+
+export function getCachedDisplayName(userId?: string | null) {
+  if (!userId || !cachedDisplayName || cachedDisplayName.userId !== userId) return null;
+  return cachedDisplayName.nome;
+}
+
+export function setCachedDisplayName(userId: string, nome: string) {
+  cachedDisplayName = { userId, nome: nome.trim() };
+}
+
+export async function getPrimaryHouseholdId(forUserId?: string) {
+  if (forUserId && cachedHouseholdUserId === forUserId && cachedHouseholdId) {
+    return cachedHouseholdId;
+  }
+
   const { data: auth } = await supabase.auth.getSession();
   const user = auth.session?.user;
   if (!user) return null;
@@ -127,7 +149,9 @@ export async function getPrimaryHouseholdId() {
 }
 
 /** Aceita convites pendentes do e-mail do utilizador (útil no login). */
-export async function syncHouseholdMemberships() {
+export async function syncHouseholdMemberships(forUserId?: string) {
+  if (forUserId && syncedInvitesUserId === forUserId) return;
+
   const { data: auth } = await supabase.auth.getSession();
   const user = auth.session?.user;
   if (!user?.email) return;
@@ -285,13 +309,20 @@ export async function updateOwnProfile(
           'Execute no Supabase: alter table public.profiles add column if not exists avatar_url text;',
         );
       }
-      return;
+    } else {
+      throw error;
     }
-    throw error;
+  } else if (avatarUrl !== undefined) {
+    profileAvatarSupported = true;
   }
 
-  if (avatarUrl !== undefined) {
-    profileAvatarSupported = true;
+  // Mantém o nome do "Olá" e da sessão alinhados com o perfil
+  setCachedDisplayName(auth.user.id, nome.trim());
+  const { error: metaError } = await supabase.auth.updateUser({
+    data: { nome: nome.trim() },
+  });
+  if (metaError) {
+    console.warn('Erro ao atualizar metadata do utilizador', metaError);
   }
 }
 
@@ -308,6 +339,7 @@ export async function getOwnProfile() {
 
     if (!error) {
       profileAvatarSupported = true;
+      if (data?.nome) setCachedDisplayName(auth.user.id, data.nome);
       return data;
     }
 
@@ -325,5 +357,6 @@ export async function getOwnProfile() {
     .maybeSingle();
 
   if (error) throw error;
+  if (data?.nome) setCachedDisplayName(auth.user.id, data.nome);
   return data ? { ...data, avatar_url: null } : null;
 }

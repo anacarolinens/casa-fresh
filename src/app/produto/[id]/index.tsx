@@ -2,14 +2,16 @@ import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/ui/button';
 import type { ThemeColors } from '@/constants/theme';
 import { Radius, Spacing } from '@/constants/theme';
 import { useProducts } from '@/contexts/products-context';
+import { useShopping } from '@/contexts/shopping-context';
 import { useTheme, useThemedStyles } from '@/contexts/theme-context';
+import { confirmDiscardExpired } from '@/lib/discard-product';
 import { statusLabel } from '@/types/product';
 
 export default function ProdutoDetalheScreen() {
@@ -18,6 +20,7 @@ export default function ProdutoDetalheScreen() {
   const styles = useThemedStyles(makeStyles);
   const { id } = useLocalSearchParams<{ id: string }>();
   const { products, removeProduct, adjustQuantity } = useProducts();
+  const { addItem } = useShopping();
   const [isRemoving, setIsRemoving] = useState(false);
   const [isAdjusting, setIsAdjusting] = useState(false);
   const product = products.find((p) => p.id === id);
@@ -48,6 +51,20 @@ export default function ProdutoDetalheScreen() {
     }
   };
 
+  const handleUseOne = () => changeQuantity(-1);
+
+  const handleFinish = () => {
+    if (product.quantity <= 0) return;
+    Alert.alert('Acabei', `Marcar "${product.name}" como acabado (quantidade 0)?`, [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Acabei',
+        style: 'destructive',
+        onPress: () => changeQuantity(-product.quantity),
+      },
+    ]);
+  };
+
   const handleRemove = () => {
     Alert.alert('Remover produto', `Tem certeza que deseja remover "${product.name}"?`, [
       { text: 'Cancelar', style: 'cancel' },
@@ -70,6 +87,24 @@ export default function ProdutoDetalheScreen() {
     ]);
   };
 
+  const handleDiscard = () => {
+    if (isRemoving) return;
+    confirmDiscardExpired(product, {
+      remove: async () => {
+        setIsRemoving(true);
+        try {
+          await removeProduct(product.id);
+        } finally {
+          setIsRemoving(false);
+        }
+      },
+      addToShopping: () => addItem(product.name),
+      onDone: () => router.replace('/(tabs)/estoque'),
+    });
+  };
+
+  const isExpired = product.status === 'expired';
+
   return (
     <View
       style={[
@@ -84,7 +119,10 @@ export default function ProdutoDetalheScreen() {
         <View style={styles.back} />
       </View>
 
-      <View style={styles.content}>
+      <ScrollView
+        style={styles.flex}
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}>
         {product.imageUrl ? (
           <Image source={{ uri: product.imageUrl }} style={styles.photoImage} contentFit="cover" />
         ) : (
@@ -95,6 +133,18 @@ export default function ProdutoDetalheScreen() {
 
         <Text style={styles.name}>{product.name}</Text>
         <Text style={styles.location}>{product.location}</Text>
+
+        {isExpired ? (
+          <View style={styles.expiredBanner}>
+            <Ionicons name="warning" size={18} color={colors.danger} />
+            <View style={styles.expiredBannerText}>
+              <Text style={styles.expiredTitle}>Produto vencido</Text>
+              <Text style={styles.expiredSubtitle}>
+                Descarte do estoque e, se quiser, reponha na lista de compras.
+              </Text>
+            </View>
+          </View>
+        ) : null}
 
         <View style={styles.qtyBox}>
           <Text style={styles.qtyLabel}>Quantidade no estoque</Text>
@@ -124,8 +174,31 @@ export default function ProdutoDetalheScreen() {
           <Text style={styles.qtyHint}>Use − para consumir sem editar o produto</Text>
         </View>
 
+        {isExpired ? null : (
+          <View style={styles.quickActions}>
+            <Pressable
+              style={[styles.quickBtn, product.quantity <= 0 && styles.qtyBtnDisabled]}
+              onPress={handleUseOne}
+              disabled={isAdjusting || product.quantity <= 0}>
+              <Ionicons name="remove-circle-outline" size={20} color={colors.accentDark} />
+              <Text style={styles.quickBtnText}>Usei 1</Text>
+            </Pressable>
+            <Pressable
+              style={[
+                styles.quickBtn,
+                styles.quickBtnDanger,
+                product.quantity <= 0 && styles.qtyBtnDisabled,
+              ]}
+              onPress={handleFinish}
+              disabled={isAdjusting || product.quantity <= 0}>
+              <Ionicons name="checkmark-done-outline" size={20} color={colors.danger} />
+              <Text style={[styles.quickBtnText, styles.quickBtnTextDanger]}>Acabei</Text>
+            </Pressable>
+          </View>
+        )}
+
         <View style={styles.grid}>
-          <View style={[styles.infoCard, styles.infoHighlight]}>
+          <View style={[styles.infoCard, isExpired ? styles.infoDanger : styles.infoHighlight]}>
             <Text style={styles.infoLabel}>Vence em</Text>
             <Text style={styles.infoValue}>
               {product.daysLeft != null && product.daysLeft >= 0
@@ -145,25 +218,26 @@ export default function ProdutoDetalheScreen() {
             <Text style={styles.infoValue}>{alert || 'Ok'}</Text>
           </View>
         </View>
+      </ScrollView>
 
-        <View style={styles.actions}>
-          <Pressable onPress={() => router.push(`/produto/${product.id}/editar`)}>
-            <Text style={styles.link}>Editar produto</Text>
-          </Pressable>
-          <Pressable onPress={handleRemove} disabled={isRemoving}>
-            <Text style={[styles.link, styles.linkDanger]}>Remover produto</Text>
-          </Pressable>
-        </View>
+      <View style={styles.footer}>
+        {isRemoving ? (
+          <ActivityIndicator color={colors.accent} />
+        ) : (
+          <>
+            {isExpired ? (
+              <Button label="Descartar" variant="danger" onPress={handleDiscard} />
+            ) : null}
+            <Button
+              label="Editar produto"
+              onPress={() => router.push(`/produto/${product.id}/editar`)}
+            />
+            {!isExpired ? (
+              <Button label="Remover produto" variant="danger" onPress={handleRemove} />
+            ) : null}
+          </>
+        )}
       </View>
-
-      {isRemoving ? (
-        <ActivityIndicator color={colors.accent} />
-      ) : (
-        <Button
-          label="Editar produto"
-          onPress={() => router.push(`/produto/${product.id}/editar`)}
-        />
-      )}
     </View>
   );
 }
@@ -174,6 +248,9 @@ function makeStyles(colors: ThemeColors) {
       flex: 1,
       backgroundColor: colors.background,
       paddingHorizontal: Spacing.xl,
+    },
+    flex: {
+      flex: 1,
     },
     header: {
       flexDirection: 'row' as const,
@@ -193,9 +270,13 @@ function makeStyles(colors: ThemeColors) {
       color: colors.text,
     },
     content: {
-      flex: 1,
       alignItems: 'center' as const,
       gap: Spacing.md,
+      paddingBottom: Spacing.lg,
+    },
+    footer: {
+      gap: Spacing.md,
+      paddingTop: Spacing.md,
     },
     photo: {
       width: 120,
@@ -222,6 +303,29 @@ function makeStyles(colors: ThemeColors) {
       fontSize: 15,
       color: colors.textSecondary,
       marginBottom: Spacing.sm,
+    },
+    expiredBanner: {
+      width: '100%' as const,
+      flexDirection: 'row' as const,
+      alignItems: 'flex-start' as const,
+      gap: Spacing.md,
+      backgroundColor: colors.dangerSoft,
+      borderRadius: Radius.lg,
+      padding: Spacing.lg,
+    },
+    expiredBannerText: {
+      flex: 1,
+      gap: 4,
+    },
+    expiredTitle: {
+      fontSize: 15,
+      fontWeight: '700' as const,
+      color: colors.danger,
+    },
+    expiredSubtitle: {
+      fontSize: 13,
+      color: colors.textSecondary,
+      lineHeight: 18,
     },
     qtyBox: {
       width: '100%' as const,
@@ -266,6 +370,32 @@ function makeStyles(colors: ThemeColors) {
       color: colors.textMuted,
       textAlign: 'center' as const,
     },
+    quickActions: {
+      width: '100%' as const,
+      flexDirection: 'row' as const,
+      gap: Spacing.md,
+    },
+    quickBtn: {
+      flex: 1,
+      flexDirection: 'row' as const,
+      alignItems: 'center' as const,
+      justifyContent: 'center' as const,
+      gap: Spacing.sm,
+      backgroundColor: colors.accentSoft,
+      borderRadius: Radius.md,
+      paddingVertical: Spacing.md,
+    },
+    quickBtnDanger: {
+      backgroundColor: colors.dangerSoft,
+    },
+    quickBtnText: {
+      fontSize: 15,
+      fontWeight: '700' as const,
+      color: colors.accentDark,
+    },
+    quickBtnTextDanger: {
+      color: colors.danger,
+    },
     grid: {
       width: '100%' as const,
       flexDirection: 'row' as const,
@@ -283,6 +413,9 @@ function makeStyles(colors: ThemeColors) {
     infoHighlight: {
       backgroundColor: colors.warningSoft,
     },
+    infoDanger: {
+      backgroundColor: colors.dangerSoft,
+    },
     infoLabel: {
       fontSize: 12,
       color: colors.textSecondary,
@@ -295,19 +428,6 @@ function makeStyles(colors: ThemeColors) {
     infoSub: {
       fontSize: 12,
       color: colors.textSecondary,
-    },
-    actions: {
-      flexDirection: 'row' as const,
-      gap: Spacing.xxl,
-      marginTop: Spacing.lg,
-    },
-    link: {
-      fontSize: 14,
-      fontWeight: '600' as const,
-      color: colors.accent,
-    },
-    linkDanger: {
-      color: colors.danger,
     },
   };
 }

@@ -2,10 +2,12 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { Image } from 'expo-image';
 import { router } from 'expo-router';
-import { useState, type ReactNode } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -15,6 +17,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { CategoryPicker } from '@/components/category-picker';
 import { Button } from '@/components/ui/button';
 import type { ThemeColors } from '@/constants/theme';
 import { CATEGORIES, LOCATIONS, Radius, Spacing, UNITS } from '@/constants/theme';
@@ -27,6 +30,7 @@ export default function AdicionarScreen() {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const { addProduct } = useProducts();
+  const scrollRef = useRef<ScrollView>(null);
   const [nome, setNome] = useState('');
   const [categoria, setCategoria] = useState<string>(CATEGORIES[0]);
   const [quantidade, setQuantidade] = useState('1');
@@ -36,10 +40,15 @@ export default function AdicionarScreen() {
   const [dataValidade, setDataValidade] = useState('');
   const [imageUri, setImageUri] = useState<string | null>(null);
   const [imageMimeType, setImageMimeType] = useState<string | null>(null);
-  const [showCategoria, setShowCategoria] = useState(false);
   const [showUnidade, setShowUnidade] = useState(false);
   const [showLocal, setShowLocal] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+
+  const scrollToDates = () => {
+    requestAnimationFrame(() => {
+      scrollRef.current?.scrollToEnd({ animated: true });
+    });
+  };
 
   const pickImage = () => {
     const options: {
@@ -162,7 +171,19 @@ export default function AdicionarScreen() {
         <View style={styles.back} />
       </View>
 
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top + 56 : 0}>
+        <ScrollView
+          ref={scrollRef}
+          contentContainerStyle={[
+            styles.content,
+            { paddingBottom: insets.bottom + Spacing.xxxl + 120 },
+          ]}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag">
         <Pressable style={styles.photoWrap} onPress={pickImage}>
           {imageUri ? (
             <Image source={{ uri: imageUri }} style={styles.photoImage} contentFit="cover" />
@@ -195,25 +216,7 @@ export default function AdicionarScreen() {
         </Field>
 
         <Field label="Categoria">
-          <Pressable style={styles.select} onPress={() => setShowCategoria((v) => !v)}>
-            <Text style={styles.selectText}>{categoria}</Text>
-            <Ionicons name="chevron-down" size={18} color={colors.textMuted} />
-          </Pressable>
-          {showCategoria ? (
-            <View style={styles.dropdown}>
-              {CATEGORIES.map((item) => (
-                <Pressable
-                  key={item}
-                  style={styles.dropdownItem}
-                  onPress={() => {
-                    setCategoria(item);
-                    setShowCategoria(false);
-                  }}>
-                  <Text style={styles.dropdownText}>{item}</Text>
-                </Pressable>
-              ))}
-            </View>
-          ) : null}
+          <CategoryPicker value={categoria} onChange={setCategoria} />
         </Field>
 
         <View style={styles.row}>
@@ -283,6 +286,7 @@ export default function AdicionarScreen() {
                 placeholderTextColor={colors.textMuted}
                 value={dataCompra}
                 onChangeText={(text) => setDataCompra(maskBrDate(text))}
+                onFocus={scrollToDates}
                 keyboardType="number-pad"
                 maxLength={10}
               />
@@ -296,6 +300,7 @@ export default function AdicionarScreen() {
                 placeholderTextColor={colors.textMuted}
                 value={dataValidade}
                 onChangeText={(text) => setDataValidade(maskBrDate(text))}
+                onFocus={scrollToDates}
                 keyboardType="number-pad"
                 maxLength={10}
               />
@@ -305,7 +310,8 @@ export default function AdicionarScreen() {
 
         <Button label="Salvar produto" onPress={handleSave} style={styles.save} disabled={isSaving} />
         {isSaving ? <ActivityIndicator color={colors.accent} style={{ marginTop: 8 }} /> : null}
-      </ScrollView>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </View>
   );
 }
@@ -325,6 +331,9 @@ function makeStyles(colors: ThemeColors) {
     screen: {
       flex: 1,
       backgroundColor: colors.background,
+    },
+    flex: {
+      flex: 1,
     },
     header: {
       flexDirection: 'row' as const,

@@ -17,7 +17,9 @@ import { NotificationBell } from '@/components/notification-bell';
 import type { ThemeColors } from '@/constants/theme';
 import { LOCATIONS, Radius, Spacing } from '@/constants/theme';
 import { useProducts } from '@/contexts/products-context';
+import { useShopping } from '@/contexts/shopping-context';
 import { useTheme, useThemedStyles } from '@/contexts/theme-context';
+import { confirmDiscardExpired } from '@/lib/discard-product';
 import type { Product } from '@/types/product';
 
 const FILTERS = ['Todos', ...LOCATIONS] as const;
@@ -26,9 +28,12 @@ export default function EstoqueScreen() {
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
-  const { products: allProducts, isLoading, removeProduct } = useProducts();
+  const { products: allProducts, isLoading, removeProduct, adjustQuantity } = useProducts();
+  const { addItem } = useShopping();
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<(typeof FILTERS)[number]>('Todos');
+  const [consumingId, setConsumingId] = useState<string | null>(null);
+  const [discardingId, setDiscardingId] = useState<string | null>(null);
 
   const products = useMemo(() => {
     return allProducts.filter((p) => {
@@ -38,8 +43,40 @@ export default function EstoqueScreen() {
     });
   }, [allProducts, query, filter]);
 
+  const consumeOne = async (product: Product) => {
+    if (consumingId || product.quantity <= 0) return;
+    setConsumingId(product.id);
+    try {
+      await adjustQuantity(product.id, -1);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Erro ao atualizar quantidade';
+      Alert.alert('Erro', message);
+    } finally {
+      setConsumingId(null);
+    }
+  };
+
+  const discardExpired = (product: Product) => {
+    if (discardingId) return;
+    confirmDiscardExpired(product, {
+      remove: async () => {
+        setDiscardingId(product.id);
+        try {
+          await removeProduct(product.id);
+        } finally {
+          setDiscardingId(null);
+        }
+      },
+      addToShopping: () => addItem(product.name),
+    });
+  };
+
   const openProductMenu = (product: Product) => {
-    Alert.alert(product.name, 'O que deseja fazer?', [
+    const options: {
+      text: string;
+      style?: 'cancel' | 'destructive';
+      onPress?: () => void;
+    }[] = [
       {
         text: 'Ver detalhes',
         onPress: () => router.push(`/produto/${product.id}`),
@@ -48,29 +85,67 @@ export default function EstoqueScreen() {
         text: 'Editar',
         onPress: () => router.push(`/produto/${product.id}/editar`),
       },
-      {
-        text: 'Remover',
+    ];
+
+    if (product.status === 'expired') {
+      options.push({
+        text: 'Descartar',
+        style: 'destructive',
+        onPress: () => discardExpired(product),
+      });
+    } else if (product.quantity > 0) {
+      options.push({
+        text: 'Usei 1',
+        onPress: () => consumeOne(product),
+      });
+      options.push({
+        text: 'Acabei',
         style: 'destructive',
         onPress: () => {
-          Alert.alert('Remover produto', `Remover "${product.name}" do estoque?`, [
+          Alert.alert('Acabei', `Marcar "${product.name}" como acabado?`, [
             { text: 'Cancelar', style: 'cancel' },
             {
-              text: 'Remover',
+              text: 'Acabei',
               style: 'destructive',
               onPress: async () => {
                 try {
-                  await removeProduct(product.id);
+                  await adjustQuantity(product.id, -product.quantity);
                 } catch (error) {
-                  const message = error instanceof Error ? error.message : 'Erro ao remover';
+                  const message =
+                    error instanceof Error ? error.message : 'Erro ao atualizar quantidade';
                   Alert.alert('Erro', message);
                 }
               },
             },
           ]);
         },
+      });
+    }
+
+    options.push({
+      text: 'Remover',
+      style: 'destructive',
+      onPress: () => {
+        Alert.alert('Remover produto', `Remover "${product.name}" do estoque?`, [
+          { text: 'Cancelar', style: 'cancel' },
+          {
+            text: 'Remover',
+            style: 'destructive',
+            onPress: async () => {
+              try {
+                await removeProduct(product.id);
+              } catch (error) {
+                const message = error instanceof Error ? error.message : 'Erro ao remover';
+                Alert.alert('Erro', message);
+              }
+            },
+          },
+        ]);
       },
-      { text: 'Cancelar', style: 'cancel' },
-    ]);
+    });
+
+    options.push({ text: 'Cancelar', style: 'cancel' });
+    Alert.alert(product.name, 'O que deseja fazer?', options);
   };
 
   return (
@@ -121,6 +196,10 @@ export default function EstoqueScreen() {
               product={item}
               onPress={() => router.push(`/produto/${item.id}`)}
               onMorePress={() => openProductMenu(item)}
+              onConsume={() => consumeOne(item)}
+              onDiscard={() => discardExpired(item)}
+              consumeDisabled={consumingId === item.id}
+              discardDisabled={discardingId === item.id}
             />
           ))}
           {products.length === 0 ? (

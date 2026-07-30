@@ -18,14 +18,14 @@ function mapItem(row: DbShoppingItem): ShoppingItem {
   };
 }
 
-export async function fetchShoppingItems() {
-  const householdId = await getPrimaryHouseholdId();
-  if (!householdId) return [] as ShoppingItem[];
+export async function fetchShoppingItems(householdId?: string | null) {
+  const hid = householdId === undefined ? await getPrimaryHouseholdId() : householdId;
+  if (!hid) return [] as ShoppingItem[];
 
   const { data, error } = await supabase
     .from('shopping_items')
     .select('id, nome, comprado, product_id')
-    .eq('household_id', householdId)
+    .eq('household_id', hid)
     .order('created_at', { ascending: false });
 
   if (error) throw error;

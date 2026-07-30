@@ -1,6 +1,7 @@
 import { Session } from '@supabase/supabase-js';
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 
+import { clearBootstrapCache } from '@/lib/bootstrap';
 import { clearHouseholdCache } from '@/lib/households';
 import { supabase } from '@/lib/supabase';
 
@@ -18,8 +19,8 @@ const AuthContext = createContext<AuthContextType>({
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
-  // false = não bloqueia a UI no arranque
-  const [isLoading, setIsLoading] = useState(false);
+  // true até getSession — evita limpar produtos antes da sessão existir
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     let active = true;
@@ -37,6 +38,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const { data: listener } = supabase.auth.onAuthStateChange((_event, next) => {
       if (active) {
+        if (!next) {
+          clearBootstrapCache();
+          clearHouseholdCache();
+        }
         setSession(next);
         setIsLoading(false);
       }
@@ -49,6 +54,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signOut = async () => {
+    clearBootstrapCache();
     clearHouseholdCache();
     await supabase.auth.signOut();
   };

@@ -73,7 +73,7 @@ export function mapDbProduct(row: DbProduct): Product {
     quantity,
     unit: row.unidade,
     location: row.local || '—',
-    category: row.categoria || 'Outros',
+    category: row.categoria || '',
     purchaseDate: formatBrDate(row.data_compra),
     expiryDate: formatBrDate(row.data_validade),
     daysLeft,
@@ -82,16 +82,16 @@ export function mapDbProduct(row: DbProduct): Product {
   };
 }
 
-export async function fetchProducts() {
-  const householdId = await getPrimaryHouseholdId();
-  if (!householdId) return [] as Product[];
+export async function fetchProducts(householdId?: string | null) {
+  const hid = householdId === undefined ? await getPrimaryHouseholdId() : householdId;
+  if (!hid) return [] as Product[];
 
   const { data, error } = await supabase
     .from('products')
     .select(
       'id, nome, categoria, quantidade, unidade, local, data_compra, data_validade, imagem_url',
     )
-    .eq('household_id', householdId)
+    .eq('household_id', hid)
     .order('data_validade', { ascending: true });
 
   if (error) throw error;

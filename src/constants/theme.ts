@@ -98,4 +98,4 @@ export const Radius = {
 
 export const LOCATIONS = ['Geladeira', 'Freezer', 'Despensa'] as const;
 export const UNITS = ['Unidade', 'Kg', 'g', 'L', 'ml', 'Pacote'] as const;
-export const CATEGORIES = ['Laticínios', 'Frutas', 'Verduras', 'Carnes', 'Bebidas', 'Outros'] as const;
+export const CATEGORIES = ['Laticínios', 'Frutas', 'Verduras', 'Carnes', 'Bebidas'] as const;

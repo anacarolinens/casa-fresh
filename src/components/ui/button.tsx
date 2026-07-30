@@ -6,7 +6,7 @@ import { useThemedStyles } from '@/contexts/theme-context';
 
 type ButtonProps = PressableProps & {
   label: string;
-  variant?: 'primary' | 'secondary' | 'ghost';
+  variant?: 'primary' | 'secondary' | 'ghost' | 'danger';
 };
 
 export function Button({ label, variant = 'primary', style, disabled, ...props }: ButtonProps) {
@@ -20,6 +20,7 @@ export function Button({ label, variant = 'primary', style, disabled, ...props }
         variant === 'primary' && styles.primary,
         variant === 'secondary' && styles.secondary,
         variant === 'ghost' && styles.ghost,
+        variant === 'danger' && styles.danger,
         state.pressed && styles.pressed,
         disabled && styles.disabled,
         typeof style === 'function' ? style(state) : style,
@@ -31,6 +32,7 @@ export function Button({ label, variant = 'primary', style, disabled, ...props }
           variant === 'primary' && styles.labelPrimary,
           variant === 'secondary' && styles.labelSecondary,
           variant === 'ghost' && styles.labelGhost,
+          variant === 'danger' && styles.labelDanger,
         ]}>
         {label}
       </Text>
@@ -57,6 +59,9 @@ function makeStyles(colors: ThemeColors) {
     ghost: {
       backgroundColor: 'transparent',
     },
+    danger: {
+      backgroundColor: colors.danger,
+    },
     pressed: {
       opacity: 0.88,
     },
@@ -75,6 +80,9 @@ function makeStyles(colors: ThemeColors) {
     },
     labelGhost: {
       color: colors.accent,
+    },
+    labelDanger: {
+      color: '#FFFFFF',
     },
   };
 }

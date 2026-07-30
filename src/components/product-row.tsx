@@ -11,9 +11,21 @@ type ProductRowProps = {
   product: Product;
   onPress?: () => void;
   onMorePress?: () => void;
+  onConsume?: () => void;
+  onDiscard?: () => void;
+  consumeDisabled?: boolean;
+  discardDisabled?: boolean;
 };
 
-export function ProductRow({ product, onPress, onMorePress }: ProductRowProps) {
+export function ProductRow({
+  product,
+  onPress,
+  onMorePress,
+  onConsume,
+  onDiscard,
+  consumeDisabled,
+  discardDisabled,
+}: ProductRowProps) {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const badge = daysBadge(product);
@@ -24,6 +36,7 @@ export function ProductRow({ product, onPress, onMorePress }: ProductRowProps) {
       : product.status === 'missing'
         ? colors.warning
         : colors.textSecondary;
+  const showDiscard = product.status === 'expired' && onDiscard;
 
   return (
     <View style={styles.row}>
@@ -76,6 +89,26 @@ export function ProductRow({ product, onPress, onMorePress }: ProductRowProps) {
           </View>
         </View>
       </Pressable>
+
+      {showDiscard ? (
+        <Pressable
+          onPress={onDiscard}
+          disabled={discardDisabled}
+          hitSlop={8}
+          style={[styles.consumeBtn, discardDisabled && styles.consumeDisabled]}>
+          <Ionicons name="trash-outline" size={20} color={colors.danger} />
+          <Text style={styles.discardText}>Descartar</Text>
+        </Pressable>
+      ) : onConsume && product.quantity > 0 ? (
+        <Pressable
+          onPress={onConsume}
+          disabled={consumeDisabled}
+          hitSlop={8}
+          style={[styles.consumeBtn, consumeDisabled && styles.consumeDisabled]}>
+          <Ionicons name="remove-circle-outline" size={22} color={colors.accentDark} />
+          <Text style={styles.consumeText}>Usei 1</Text>
+        </Pressable>
+      ) : null}
 
       {onMorePress ? (
         <Pressable onPress={onMorePress} hitSlop={10} style={styles.more}>
@@ -184,6 +217,25 @@ function makeStyles(colors: ThemeColors) {
     },
     more: {
       padding: 2,
+    },
+    consumeBtn: {
+      alignItems: 'center' as const,
+      justifyContent: 'center' as const,
+      gap: 2,
+      paddingHorizontal: Spacing.xs,
+    },
+    consumeDisabled: {
+      opacity: 0.4,
+    },
+    consumeText: {
+      fontSize: 10,
+      fontWeight: '700' as const,
+      color: colors.accentDark,
+    },
+    discardText: {
+      fontSize: 10,
+      fontWeight: '700' as const,
+      color: colors.danger,
     },
   };
 }

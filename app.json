@@ -15,7 +15,8 @@
         "backgroundColor": "#1A1A1A",
         "foregroundImage": "./assets/images/casa-fresh-logo.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "softwareKeyboardLayoutMode": "resize"
     },
     "web": {
       "output": "static",

@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -13,18 +13,23 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { CategoryPicker } from '@/components/category-picker';
 import { Button } from '@/components/ui/button';
 import type { ThemeColors } from '@/constants/theme';
-import { LOCATIONS, Radius, Spacing, UNITS } from '@/constants/theme';
+import { CATEGORIES, LOCATIONS, Radius, Spacing, UNITS } from '@/constants/theme';
 import { useAuth } from '@/contexts/auth-context';
 import { useProducts } from '@/contexts/products-context';
 import { useShopping } from '@/contexts/shopping-context';
 import { useTheme, useThemedStyles } from '@/contexts/theme-context';
 import { isSupabaseConfigured } from '@/lib/supabase';
-import type { Product, ShoppingItem } from '@/types/product';
+import {
+  getShoppingSuggestions,
+  type Product,
+  type ShoppingItem,
+} from '@/types/product';
 
 /** Evita repetir o mesmo aviso na sessão atual */
-const dismissedMissingIds = new Set<string>();
+const dismissedSuggestionIds = new Set<string>();
 /** Itens da lista já enviados ao estoque nesta sessão */
 const stockedShoppingIds = new Set<string>();
 
@@ -55,25 +60,22 @@ export default function ComprasScreen() {
   const [tab, setTab] = useState<'buy' | 'bought'>('buy');
   const [isAdding, setIsAdding] = useState(false);
   const [newItem, setNewItem] = useState('');
-  const [suggestion, setSuggestion] = useState<Product | null>(null);
+  const [addingSuggestionId, setAddingSuggestionId] = useState<string | null>(null);
+  const [dismissedTick, setDismissedTick] = useState(0);
 
   const [pendingItem, setPendingItem] = useState<ShoppingItem | null>(null);
   const [stockQty, setStockQty] = useState('1');
+  const [stockCategory, setStockCategory] = useState<string>(CATEGORIES[0]);
   const [stockLocation, setStockLocation] = useState<string>(LOCATIONS[0]);
   const [stockUnit, setStockUnit] = useState<string>(UNITS[0]);
   const [isSavingStock, setIsSavingStock] = useState(false);
   const [stockedIds, setStockedIds] = useState(() => new Set(stockedShoppingIds));
 
-  useEffect(() => {
-    const next = products.find(
-      (p) =>
-        (p.status === 'missing' || p.quantity <= 0) &&
-        !dismissedMissingIds.has(p.id) &&
-        !isAlreadyOnList(items, p),
-    );
-
-    setSuggestion(next ?? null);
-  }, [products, items]);
+  const suggestions = useMemo(
+    () => getShoppingSuggestions(products, items, dismissedSuggestionIds),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- dismissedTick força recálculo após dismiss
+    [products, items, dismissedTick],
+  );
 
   const visible = useMemo(
     () => items.filter((item) => (tab === 'buy' ? !item.bought : item.bought)),
@@ -99,6 +101,7 @@ export default function ComprasScreen() {
 
     setPendingItem(item);
     setStockQty('1');
+    setStockCategory(existing?.category || CATEGORIES[0]);
     setStockLocation(existing?.location && existing.location !== '—' ? existing.location : LOCATIONS[0]);
     setStockUnit(existing?.unit || UNITS[0]);
   };
@@ -148,6 +151,11 @@ export default function ComprasScreen() {
       return;
     }
 
+    if (!linkedProduct && !stockCategory.trim()) {
+      Alert.alert('Atenção', 'Selecione uma categoria.');
+      return;
+    }
+
     setIsSavingStock(true);
     try {
       if (linkedProduct) {
@@ -155,7 +163,7 @@ export default function ComprasScreen() {
       } else {
         await addProduct({
           name: pendingItem.name.trim(),
-          category: 'Outros',
+          category: stockCategory.trim(),
           quantity: qty,
           unit: stockUnit,
           location: stockLocation,
@@ -185,26 +193,51 @@ export default function ComprasScreen() {
     }
   };
 
-  const dismissSuggestion = () => {
-    if (suggestion) {
-      dismissedMissingIds.add(suggestion.id);
-    }
-    setSuggestion(null);
+  const dismissSuggestion = (productId: string) => {
+    dismissedSuggestionIds.add(productId);
+    setDismissedTick((n) => n + 1);
   };
 
-  const addSuggestionToList = async () => {
-    if (!suggestion) return;
-
+  const addSuggestionToList = async (product: Product) => {
+    if (addingSuggestionId) return;
+    setAddingSuggestionId(product.id);
     try {
-      if (!isAlreadyOnList(items, suggestion)) {
-        await addItem(suggestion.name, suggestion.id);
+      if (!isAlreadyOnList(items, product)) {
+        await addItem(product.name, product.id);
       }
-      dismissedMissingIds.add(suggestion.id);
-      setSuggestion(null);
+      dismissedSuggestionIds.add(product.id);
+      setDismissedTick((n) => n + 1);
       setTab('buy');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Erro ao adicionar à lista';
       Alert.alert('Erro', message);
+    } finally {
+      setAddingSuggestionId(null);
+    }
+  };
+
+  const addAllSuggestions = async () => {
+    if (!suggestions.length || addingSuggestionId) return;
+    setAddingSuggestionId('all');
+    try {
+      const already = new Set(
+        items.filter((i) => !i.bought).map((i) => i.name.trim().toLowerCase()),
+      );
+      for (const suggestion of suggestions) {
+        const key = suggestion.product.name.trim().toLowerCase();
+        if (!already.has(key) && !items.some((i) => !i.bought && i.productId === suggestion.product.id)) {
+          await addItem(suggestion.product.name, suggestion.product.id);
+          already.add(key);
+        }
+        dismissedSuggestionIds.add(suggestion.product.id);
+      }
+      setDismissedTick((n) => n + 1);
+      setTab('buy');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Erro ao adicionar sugestões';
+      Alert.alert('Erro', message);
+    } finally {
+      setAddingSuggestionId(null);
     }
   };
 
@@ -244,47 +277,95 @@ export default function ComprasScreen() {
 
   return (
     <View style={[styles.screen, { paddingTop: insets.top + Spacing.md }]}>
-      <Text style={styles.title}>Lista de compras</Text>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled">
+        <Text style={styles.title}>Lista de compras</Text>
 
-      <View style={styles.addRow}>
-        <TextInput
-          style={styles.addInput}
-          placeholder="Adicionar item (ex: papel toalha)"
-          placeholderTextColor={colors.textMuted}
-          value={newItem}
-          onChangeText={setNewItem}
-          onSubmitEditing={handleAddManual}
-          returnKeyType="done"
-        />
-        <Pressable
-          style={[styles.addBtn, isAdding && styles.addBtnDisabled]}
-          onPress={handleAddManual}
-          disabled={isAdding}>
-          {isAdding ? (
-            <ActivityIndicator color="#FFF" size="small" />
-          ) : (
-            <Ionicons name="add" size={24} color="#FFF" />
-          )}
-        </Pressable>
-      </View>
+        <View style={styles.addRow}>
+          <TextInput
+            style={styles.addInput}
+            placeholder="Adicionar item (ex: papel toalha)"
+            placeholderTextColor={colors.textMuted}
+            value={newItem}
+            onChangeText={setNewItem}
+            onSubmitEditing={handleAddManual}
+            returnKeyType="done"
+          />
+          <Pressable
+            style={[styles.addBtn, isAdding && styles.addBtnDisabled]}
+            onPress={handleAddManual}
+            disabled={isAdding}>
+            {isAdding ? (
+              <ActivityIndicator color="#FFF" size="small" />
+            ) : (
+              <Ionicons name="add" size={24} color="#FFF" />
+            )}
+          </Pressable>
+        </View>
 
-      <View style={styles.tabs}>
-        <Pressable
-          style={[styles.tab, tab === 'buy' && styles.tabActive]}
-          onPress={() => setTab('buy')}>
-          <Text style={[styles.tabText, tab === 'buy' && styles.tabTextActive]}>
-            Itens a comprar
-          </Text>
-        </Pressable>
-        <Pressable
-          style={[styles.tab, tab === 'bought' && styles.tabActive]}
-          onPress={() => setTab('bought')}>
-          <Text style={[styles.tabText, tab === 'bought' && styles.tabTextActive]}>Comprados</Text>
-        </Pressable>
-      </View>
+        <View style={styles.tabs}>
+          <Pressable
+            style={[styles.tab, tab === 'buy' && styles.tabActive]}
+            onPress={() => setTab('buy')}>
+            <Text style={[styles.tabText, tab === 'buy' && styles.tabTextActive]}>
+              Itens a comprar
+            </Text>
+          </Pressable>
+          <Pressable
+            style={[styles.tab, tab === 'bought' && styles.tabActive]}
+            onPress={() => setTab('bought')}>
+            <Text style={[styles.tabText, tab === 'bought' && styles.tabTextActive]}>Comprados</Text>
+          </Pressable>
+        </View>
 
-      <View style={styles.card}>
-        <ScrollView showsVerticalScrollIndicator={false}>
+        {tab === 'buy' && suggestions.length > 0 ? (
+          <View style={styles.suggestionsBox}>
+            <View style={styles.suggestionsHeader}>
+              <View style={styles.suggestionsTitleWrap}>
+                <Text style={styles.suggestionsTitle}>Sugestões do estoque</Text>
+                <Text style={styles.suggestionsHint}>
+                  Com base no que acabou ou está a acabar
+                </Text>
+              </View>
+              <Pressable
+                onPress={addAllSuggestions}
+                disabled={Boolean(addingSuggestionId)}
+                hitSlop={8}>
+                <Text style={styles.suggestionsAddAll}>
+                  {addingSuggestionId === 'all' ? '…' : 'Adicionar todos'}
+                </Text>
+              </Pressable>
+            </View>
+            {suggestions.map((suggestion) => (
+              <View key={suggestion.product.id} style={styles.suggestionRow}>
+                <View style={styles.suggestionInfo}>
+                  <Text style={styles.suggestionName}>{suggestion.product.name}</Text>
+                  <Text style={styles.suggestionReason}>{suggestion.label}</Text>
+                </View>
+                <Pressable
+                  style={styles.suggestionAdd}
+                  onPress={() => addSuggestionToList(suggestion.product)}
+                  disabled={Boolean(addingSuggestionId)}>
+                  {addingSuggestionId === suggestion.product.id ? (
+                    <ActivityIndicator color={colors.accent} size="small" />
+                  ) : (
+                    <Ionicons name="add" size={18} color={colors.accentDark} />
+                  )}
+                </Pressable>
+                <Pressable
+                  onPress={() => dismissSuggestion(suggestion.product.id)}
+                  hitSlop={8}
+                  style={styles.suggestionDismiss}>
+                  <Ionicons name="close" size={16} color={colors.textMuted} />
+                </Pressable>
+              </View>
+            ))}
+          </View>
+        ) : null}
+
+        <View style={styles.card}>
           {visible.map((item, index) => (
             <View
               key={item.id}
@@ -321,22 +402,8 @@ export default function ComprasScreen() {
               {tab === 'buy' ? 'Nenhum item para comprar.' : 'Nenhum item comprado ainda.'}
             </Text>
           ) : null}
-        </ScrollView>
-      </View>
-
-      <Modal visible={Boolean(suggestion) && !pendingItem} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <View style={styles.modalThumb}>
-              <Ionicons name="nutrition-outline" size={40} color={colors.textMuted} />
-            </View>
-            <Text style={styles.modalTitle}>{suggestion?.name} acabou!</Text>
-            <Text style={styles.modalSubtitle}>Deseja adicionar à lista de compras?</Text>
-            <Button label="Adicionar" onPress={addSuggestionToList} />
-            <Button label="Agora não" variant="secondary" onPress={dismissSuggestion} />
-          </View>
         </View>
-      </Modal>
+      </ScrollView>
 
       <Modal visible={Boolean(pendingItem)} transparent animationType="fade">
         <View style={styles.modalOverlay}>
@@ -363,7 +430,15 @@ export default function ComprasScreen() {
             </View>
 
             {!linkedProduct ? (
-              <>
+              <ScrollView
+                style={styles.stockExtras}
+                nestedScrollEnabled
+                keyboardShouldPersistTaps="handled"
+                showsVerticalScrollIndicator={false}>
+                <View style={styles.stockField}>
+                  <Text style={styles.stockLabel}>Categoria</Text>
+                  <CategoryPicker value={stockCategory} onChange={setStockCategory} />
+                </View>
                 <View style={styles.stockField}>
                   <Text style={styles.stockLabel}>Unidade</Text>
                   <View style={styles.chipRow}>
@@ -402,7 +477,7 @@ export default function ComprasScreen() {
                     ))}
                   </View>
                 </View>
-              </>
+              </ScrollView>
             ) : null}
 
             {isSavingStock ? (
@@ -432,7 +507,10 @@ function makeStyles(colors: ThemeColors) {
     screen: {
       flex: 1,
       backgroundColor: colors.background,
+    },
+    content: {
       paddingHorizontal: Spacing.xl,
+      paddingBottom: Spacing.xxxl,
     },
     title: {
       fontSize: 28,
@@ -490,12 +568,74 @@ function makeStyles(colors: ThemeColors) {
     tabTextActive: {
       color: '#FFF',
     },
-    card: {
+    suggestionsBox: {
+      backgroundColor: colors.accentSoft,
+      borderRadius: Radius.lg,
+      padding: Spacing.lg,
+      gap: Spacing.md,
+      marginBottom: Spacing.lg,
+    },
+    suggestionsHeader: {
+      flexDirection: 'row' as const,
+      alignItems: 'flex-start' as const,
+      justifyContent: 'space-between' as const,
+      gap: Spacing.md,
+    },
+    suggestionsTitleWrap: {
       flex: 1,
+      gap: 2,
+    },
+    suggestionsTitle: {
+      fontSize: 15,
+      fontWeight: '700' as const,
+      color: colors.text,
+    },
+    suggestionsHint: {
+      fontSize: 12,
+      color: colors.textSecondary,
+    },
+    suggestionsAddAll: {
+      fontSize: 13,
+      fontWeight: '700' as const,
+      color: colors.accentDark,
+    },
+    suggestionRow: {
+      flexDirection: 'row' as const,
+      alignItems: 'center' as const,
+      gap: Spacing.sm,
+      backgroundColor: colors.surface,
+      borderRadius: Radius.md,
+      paddingVertical: Spacing.sm,
+      paddingHorizontal: Spacing.md,
+    },
+    suggestionInfo: {
+      flex: 1,
+      gap: 1,
+    },
+    suggestionName: {
+      fontSize: 14,
+      fontWeight: '600' as const,
+      color: colors.text,
+    },
+    suggestionReason: {
+      fontSize: 12,
+      color: colors.textSecondary,
+    },
+    suggestionAdd: {
+      width: 32,
+      height: 32,
+      borderRadius: 16,
+      backgroundColor: colors.accentSoft,
+      alignItems: 'center' as const,
+      justifyContent: 'center' as const,
+    },
+    suggestionDismiss: {
+      padding: 4,
+    },
+    card: {
       backgroundColor: colors.surface,
       borderRadius: Radius.lg,
       paddingHorizontal: Spacing.md,
-      marginBottom: Spacing.xl,
     },
     row: {
       flexDirection: 'row' as const,
@@ -589,6 +729,11 @@ function makeStyles(colors: ThemeColors) {
     },
     stockField: {
       gap: Spacing.sm,
+    },
+    stockExtras: {
+      maxHeight: 280,
+      marginBottom: Spacing.sm,
+      gap: Spacing.md,
     },
     stockLabel: {
       fontSize: 13,

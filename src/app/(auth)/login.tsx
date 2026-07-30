@@ -15,6 +15,7 @@ import { TextField } from '@/components/ui/text-field';
 import type { ThemeColors } from '@/constants/theme';
 import { Spacing } from '@/constants/theme';
 import { useTheme, useThemedStyles } from '@/contexts/theme-context';
+import { bootstrapAppData } from '@/lib/bootstrap';
 import { isSupabaseConfigured, supabase } from '@/lib/supabase';
 
 export default function LoginScreen() {
@@ -41,18 +42,27 @@ export default function LoginScreen() {
     setIsLoading(true);
     setError(null);
 
-    const { error: authError } = await supabase.auth.signInWithPassword({
+    const { data, error: authError } = await supabase.auth.signInWithPassword({
       email: email.trim(),
       password,
     });
 
-    setIsLoading(false);
-
     if (authError) {
+      setIsLoading(false);
       setError(authError.message);
       return;
     }
 
+    const userId = data.session?.user?.id;
+    if (userId) {
+      try {
+        await bootstrapAppData(userId, { force: true });
+      } catch (bootError) {
+        console.warn('Bootstrap após login', bootError);
+      }
+    }
+
+    setIsLoading(false);
     router.replace('/(tabs)/inicio');
   };
 
@@ -76,7 +86,9 @@ export default function LoginScreen() {
       <View style={styles.content}>
         <View style={styles.header}>
           <Text style={styles.title}>Entrar</Text>
-          <Text style={styles.subtitle}>Insira seus dados para continuar</Text>
+          <Text style={styles.subtitle}>
+            {isLoading ? 'A carregar a sua casa…' : 'Insira seus dados para continuar'}
+          </Text>
         </View>
 
         <View style={styles.form}>

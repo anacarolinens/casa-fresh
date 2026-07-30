@@ -45,6 +45,7 @@ function AuthGate({ children }: { children: ReactNode }) {
   const { session } = useAuth();
   const pathname = usePathname();
   const router = useRouter();
+  const { colors } = useTheme();
 
   useEffect(() => {
     SplashScreen.hideAsync().catch(() => {});
@@ -73,12 +74,26 @@ function AuthGate({ children }: { children: ReactNode }) {
     }
   }, [session, pathname, router]);
 
-  return <>{children}</>;
+  return <View style={{ flex: 1, backgroundColor: colors.background }}>{children}</View>;
 }
 
 function ThemedStatusBar() {
   const { isDark } = useTheme();
   return <StatusBar style={isDark ? 'light' : 'dark'} />;
+}
+
+function ThemedStack() {
+  const { colors } = useTheme();
+
+  return (
+    <Stack
+      screenOptions={{
+        headerShown: false,
+        contentStyle: { backgroundColor: colors.background },
+        animation: 'slide_from_right',
+      }}
+    />
+  );
 }
 
 export default function RootLayout() {
@@ -91,7 +106,7 @@ export default function RootLayout() {
               <ShoppingProvider>
                 <AuthGate>
                   <ThemedStatusBar />
-                  <Stack screenOptions={{ headerShown: false }} />
+                  <ThemedStack />
                 </AuthGate>
               </ShoppingProvider>
             </ProductsProvider>

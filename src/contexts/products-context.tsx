@@ -12,15 +12,19 @@ import {
 import { getStockSummary, type Product } from '@/types/product';
 import { useAuth } from '@/contexts/auth-context';
 import {
+  bootstrapAppData,
+  getCachedBootstrap,
+  hydrateBootstrapFromDisk,
+  setBootstrapProducts,
+} from '@/lib/bootstrap';
+import {
   createProduct,
   deleteProduct,
-  fetchProducts,
   adjustProductQuantity,
   restockProduct,
   updateProduct,
   type NewProductInput,
 } from '@/lib/products';
-import { syncHouseholdMemberships } from '@/lib/households';
 import { isSupabaseConfigured } from '@/lib/supabase';
 
 type ProductsContextType = {
@@ -41,12 +45,21 @@ const ProductsContext = createContext<ProductsContextType | null>(null);
 export function ProductsProvider({ children }: { children: ReactNode }) {
   const { session, isLoading: authLoading } = useAuth();
   const userId = session?.user?.id ?? null;
-  const [products, setProducts] = useState<Product[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isReady, setIsReady] = useState(false);
-  const hasDataRef = useRef(false);
+  const [products, setProducts] = useState<Product[]>(() => {
+    const cached = getCachedBootstrap(userId);
+    return cached?.products ?? [];
+  });
+  const [isLoading, setIsLoading] = useState(() => {
+    const cached = getCachedBootstrap(userId);
+    return !cached;
+  });
+  const [isReady, setIsReady] = useState(() => Boolean(getCachedBootstrap(userId)));
+  const hasDataRef = useRef(Boolean(getCachedBootstrap(userId)));
+  const loadGenRef = useRef(0);
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (options?: { force?: boolean }) => {
+    if (authLoading) return;
+
     if (!isSupabaseConfigured || !userId) {
       setProducts([]);
       hasDataRef.current = false;
@@ -55,22 +68,47 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
       return;
     }
 
+    const gen = ++loadGenRef.current;
+
+    const memory = getCachedBootstrap(userId);
+    if (memory && !options?.force) {
+      setProducts(memory.products);
+      hasDataRef.current = true;
+      setIsLoading(false);
+      setIsReady(true);
+      return;
+    }
+
+    // Disco: mostra produtos já gravados e atualiza em background
+    if (!options?.force || !hasDataRef.current) {
+      const disk = memory ?? (await hydrateBootstrapFromDisk(userId));
+      if (gen !== loadGenRef.current) return;
+      if (disk) {
+        setProducts(disk.products);
+        hasDataRef.current = true;
+        setIsLoading(false);
+        setIsReady(true);
+      }
+    }
+
     const showSpinner = !hasDataRef.current;
     if (showSpinner) setIsLoading(true);
 
     try {
-      await syncHouseholdMemberships();
-      const data = await fetchProducts();
-      setProducts(data);
+      const data = await bootstrapAppData(userId, { force: true });
+      if (gen !== loadGenRef.current) return;
+      setProducts(data.products);
       hasDataRef.current = true;
     } catch (error) {
       console.warn('Erro ao carregar produtos', error);
       if (!hasDataRef.current) setProducts([]);
     } finally {
-      setIsLoading(false);
-      setIsReady(true);
+      if (gen === loadGenRef.current) {
+        setIsLoading(false);
+        setIsReady(true);
+      }
     }
-  }, [userId]);
+  }, [authLoading, userId]);
 
   useEffect(() => {
     if (authLoading) return;
@@ -84,7 +122,11 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
       }
 
       const created = await createProduct(input);
-      setProducts((prev) => [created, ...prev]);
+      setProducts((prev) => {
+        const next = [created, ...prev];
+        setBootstrapProducts(next);
+        return next;
+      });
       hasDataRef.current = true;
       return created;
     },
@@ -98,7 +140,11 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
       }
 
       const updated = await updateProduct(id, input);
-      setProducts((prev) => prev.map((p) => (p.id === id ? updated : p)));
+      setProducts((prev) => {
+        const next = prev.map((p) => (p.id === id ? updated : p));
+        setBootstrapProducts(next);
+        return next;
+      });
       return updated;
     },
     [userId],
@@ -111,7 +157,11 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
       }
 
       await deleteProduct(id);
-      setProducts((prev) => prev.filter((p) => p.id !== id));
+      setProducts((prev) => {
+        const next = prev.filter((p) => p.id !== id);
+        setBootstrapProducts(next);
+        return next;
+      });
     },
     [userId],
   );
@@ -123,7 +173,11 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
       }
 
       const updated = await restockProduct(id, addQuantity);
-      setProducts((prev) => prev.map((p) => (p.id === id ? updated : p)));
+      setProducts((prev) => {
+        const next = prev.map((p) => (p.id === id ? updated : p));
+        setBootstrapProducts(next);
+        return next;
+      });
       return updated;
     },
     [userId],
@@ -136,7 +190,11 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
       }
 
       const updated = await adjustProductQuantity(id, delta);
-      setProducts((prev) => prev.map((p) => (p.id === id ? updated : p)));
+      setProducts((prev) => {
+        const next = prev.map((p) => (p.id === id ? updated : p));
+        setBootstrapProducts(next);
+        return next;
+      });
       return updated;
     },
     [userId],
@@ -150,7 +208,7 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
       isLoading,
       isReady,
       summary,
-      refresh,
+      refresh: () => refresh({ force: true }),
       addProduct,
       editProduct,
       restock,

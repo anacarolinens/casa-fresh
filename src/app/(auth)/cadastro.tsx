@@ -16,6 +16,7 @@ import { TextField } from '@/components/ui/text-field';
 import type { ThemeColors } from '@/constants/theme';
 import { Spacing } from '@/constants/theme';
 import { useTheme, useThemedStyles } from '@/contexts/theme-context';
+import { bootstrapAppData } from '@/lib/bootstrap';
 import { isSupabaseConfigured, supabase } from '@/lib/supabase';
 
 export default function CadastroScreen() {
@@ -62,8 +63,10 @@ export default function CadastroScreen() {
       return;
     }
 
-    if (!data.session) {
-      const { error: signInError } = await supabase.auth.signInWithPassword({
+    let session = data.session;
+
+    if (!session) {
+      const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
         email: email.trim(),
         password,
       });
@@ -72,6 +75,16 @@ export default function CadastroScreen() {
         setIsLoading(false);
         setError(signInError.message);
         return;
+      }
+      session = signInData.session;
+    }
+
+    const userId = session?.user?.id;
+    if (userId) {
+      try {
+        await bootstrapAppData(userId, { force: true });
+      } catch (bootError) {
+        console.warn('Bootstrap após cadastro', bootError);
       }
     }
 
