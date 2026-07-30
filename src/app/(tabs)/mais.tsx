@@ -1,5 +1,4 @@
 import { Ionicons } from '@expo/vector-icons';
-import * as ImagePicker from 'expo-image-picker';
 import { Image } from 'expo-image';
 import { router } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
@@ -32,6 +31,7 @@ import {
   type HouseholdInvite,
   type HouseholdMember,
 } from '@/lib/households';
+import { pickImageSource } from '@/lib/pick-image';
 import { uploadProfileAvatar } from '@/lib/storage';
 import { isSupabaseConfigured, supabase } from '@/lib/supabase';
 
@@ -191,69 +191,26 @@ export default function MaisScreen() {
   };
 
   const pickAvatar = () => {
-    const options: {
-      text: string;
-      style?: 'cancel' | 'destructive';
-      onPress?: () => void | Promise<void>;
-    }[] = [
-      {
-        text: 'Câmara',
-        onPress: async () => {
-          const permission = await ImagePicker.requestCameraPermissionsAsync();
-          if (!permission.granted) {
-            Alert.alert('Permissão', 'Precisamos de acesso à câmara.');
-            return;
-          }
-          const result = await ImagePicker.launchCameraAsync({
-            mediaTypes: ['images'],
-            quality: 0.7,
-            allowsEditing: true,
-            aspect: [1, 1],
-          });
-          if (!result.canceled && result.assets[0]) {
-            setImageUri(result.assets[0].uri);
-            setImageMimeType(result.assets[0].mimeType ?? 'image/jpeg');
-            setRemoveAvatar(false);
-          }
-        },
+    pickImageSource({
+      title: 'Foto de perfil',
+      canRemove: Boolean(imageUri || avatarUrl),
+      onPicked: (image) => {
+        setImageUri(image.uri);
+        setImageMimeType(image.mimeType);
+        setRemoveAvatar(false);
       },
-      {
-        text: 'Galeria',
-        onPress: async () => {
-          const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-          if (!permission.granted) {
-            Alert.alert('Permissão', 'Precisamos de acesso às fotos.');
-            return;
-          }
-          const result = await ImagePicker.launchImageLibraryAsync({
-            mediaTypes: ['images'],
-            quality: 0.7,
-            allowsEditing: true,
-            aspect: [1, 1],
-          });
-          if (!result.canceled && result.assets[0]) {
-            setImageUri(result.assets[0].uri);
-            setImageMimeType(result.assets[0].mimeType ?? 'image/jpeg');
-            setRemoveAvatar(false);
-          }
-        },
+      onRemove: () => {
+        setImageUri(null);
+        setImageMimeType(null);
+        setRemoveAvatar(true);
       },
-    ];
+    });
+  };
 
-    if (imageUri || avatarUrl) {
-      options.push({
-        text: 'Remover foto',
-        style: 'destructive',
-        onPress: () => {
-          setImageUri(null);
-          setImageMimeType(null);
-          setRemoveAvatar(true);
-        },
-      });
-    }
-
-    options.push({ text: 'Cancelar', style: 'cancel' });
-    Alert.alert('Foto de perfil', 'Escolha uma opção', options);
+  const clearAvatar = () => {
+    setImageUri(null);
+    setImageMimeType(null);
+    setRemoveAvatar(true);
   };
 
   const displayAvatarUri = removeAvatar ? null : imageUri ?? avatarUrl;
@@ -362,6 +319,11 @@ export default function MaisScreen() {
             <Text style={styles.avatarHint}>
               {displayAvatarUri ? 'Toque para alterar a foto' : 'Toque para adicionar foto'}
             </Text>
+            {displayAvatarUri ? (
+              <Pressable onPress={clearAvatar} hitSlop={8}>
+                <Text style={styles.removeAvatar}>Remover foto</Text>
+              </Pressable>
+            ) : null}
             <View style={styles.field}>
               <Text style={styles.label}>Nome</Text>
               <TextInput style={styles.input} value={nome} onChangeText={setNome} />
@@ -639,6 +601,14 @@ function makeStyles(colors: ThemeColors) {
       fontSize: 13,
       color: colors.textSecondary,
       marginTop: -Spacing.sm,
+    },
+    removeAvatar: {
+      textAlign: 'center' as const,
+      fontSize: 13,
+      fontWeight: '600' as const,
+      color: colors.danger,
+      marginTop: Spacing.xs,
+      marginBottom: Spacing.sm,
     },
     avatarText: {
       fontSize: 32,

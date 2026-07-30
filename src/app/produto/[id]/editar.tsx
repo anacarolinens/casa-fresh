@@ -1,5 +1,4 @@
 import { Ionicons } from '@expo/vector-icons';
-import * as ImagePicker from 'expo-image-picker';
 import { Image } from 'expo-image';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
@@ -24,6 +23,7 @@ import { CATEGORIES, LOCATIONS, Radius, Spacing, UNITS } from '@/constants/theme
 import { useProducts } from '@/contexts/products-context';
 import { useTheme, useThemedStyles } from '@/contexts/theme-context';
 import { maskBrDate } from '@/lib/date-mask';
+import { pickImageSource } from '@/lib/pick-image';
 
 export default function EditarProdutoScreen() {
   const insets = useSafeAreaInsets();
@@ -86,67 +86,18 @@ export default function EditarProdutoScreen() {
   }
 
   const pickImage = () => {
-    const options: {
-      text: string;
-      style?: 'cancel' | 'destructive';
-      onPress?: () => void | Promise<void>;
-    }[] = [
-      {
-        text: 'Câmara',
-        onPress: async () => {
-          const permission = await ImagePicker.requestCameraPermissionsAsync();
-          if (!permission.granted) {
-            Alert.alert('Permissão', 'Precisamos de acesso à câmara.');
-            return;
-          }
-          const result = await ImagePicker.launchCameraAsync({
-            mediaTypes: ['images'],
-            quality: 0.7,
-            allowsEditing: true,
-            aspect: [1, 1],
-          });
-          if (!result.canceled && result.assets[0]) {
-            setImageUri(result.assets[0].uri);
-            setImageMimeType(result.assets[0].mimeType ?? 'image/jpeg');
-          }
-        },
+    pickImageSource({
+      title: 'Foto do produto',
+      canRemove: Boolean(imageUri),
+      onPicked: (image) => {
+        setImageUri(image.uri);
+        setImageMimeType(image.mimeType);
       },
-      {
-        text: 'Galeria',
-        onPress: async () => {
-          const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-          if (!permission.granted) {
-            Alert.alert('Permissão', 'Precisamos de acesso às fotos.');
-            return;
-          }
-          const result = await ImagePicker.launchImageLibraryAsync({
-            mediaTypes: ['images'],
-            quality: 0.7,
-            allowsEditing: true,
-            aspect: [1, 1],
-          });
-          if (!result.canceled && result.assets[0]) {
-            setImageUri(result.assets[0].uri);
-            setImageMimeType(result.assets[0].mimeType ?? 'image/jpeg');
-          }
-        },
+      onRemove: () => {
+        setImageUri(null);
+        setImageMimeType(null);
       },
-    ];
-
-    if (imageUri) {
-      options.push({
-        text: 'Remover foto',
-        style: 'destructive',
-        onPress: () => {
-          setImageUri(null);
-          setImageMimeType(null);
-        },
-      });
-    }
-
-    options.push({ text: 'Cancelar', style: 'cancel' });
-
-    Alert.alert('Foto do produto', 'Escolha uma opção', options);
+    });
   };
 
   const removeImage = () => {
